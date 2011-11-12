@@ -20,8 +20,19 @@
 
 __author__ = """Paulo Alcantara (pcacjr@gmail.com)"""
 
+import twitter
+
+start_user = "pcacjr"
+
 def main():
-    pass
+    api = twitter.Api(
+        consumer_key="otvCUwLAQ6tDl2YivKLdg",
+        consumer_secret="Qvh2GfSUAgFmLjQDj33QmbA5VhDEWksDbMTt9PynmHM",
+        access_token_key="408975678-A5zimpeA2rTWNk82SRAUBJaEEHm4q7Rk007SX8p4",
+        access_token_secret="YlnhhajieCX6BWRFHHGQk0eVZfqYh6lstri9zG7ZcGY")
+
+    users = api.GetFriends(user=start_user)
+    print([u.name for u in users])
 
 if __name__ == "__main__":
     main()
