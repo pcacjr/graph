@@ -20,6 +20,8 @@
 
 __author__ = """Paulo Alcantara (pcacjr@gmail.com)"""
 
+import sys
+import os
 import twitter
 
 start_user = "pcacjr"
@@ -27,9 +29,11 @@ start_user = "pcacjr"
 class Graph(object):
     def __init__(self):
         self.vertexes = {}
+        self.vertexes_no = 0
 
     def add_vertex(self, name, **kwargs):
         self.vertexes[name] = [kwargs, {"edges": {}}]
+        self.vertexes_no += 1
 
     def add_edge(self, v, *args, **kwargs):
         if not v in self.vertexes:
@@ -41,6 +45,18 @@ class Graph(object):
                 self.vertexes[arg][1]["edges"][v] = [kwargs, {"edges": {}}]
 
             self.vertexes[v][1]["edges"][arg] = [kwargs, {"edges": {}}]
+
+    def del_vertex(self, name):
+        del self.vertexes[name]
+
+        keys = []
+        for key, attrs in self.vertexes.iteritems():
+            for _key, _attrs in attrs[1]["edges"].iteritems():
+                if _key == name:
+                    keys.append([key, _key])
+
+        for k in keys:
+            del self.vertexes[k[0]][1]["edges"][k[1]]
 
     def __str__(self):
         s = ""
@@ -56,21 +72,76 @@ class Graph(object):
 
         return s
 
-def main():
-    api = twitter.Api(
-        consumer_key="otvCUwLAQ6tDl2YivKLdg",
-        consumer_secret="Qvh2GfSUAgFmLjQDj33QmbA5VhDEWksDbMTt9PynmHM",
-        access_token_key="408975678-A5zimpeA2rTWNk82SRAUBJaEEHm4q7Rk007SX8p4",
-        access_token_secret="YlnhhajieCX6BWRFHHGQk0eVZfqYh6lstri9zG7ZcGY")
+"""The beautiful thing goes here man! :-)
+"""
+def bfs(api, g, s, e):
+    users = api.GetFriends(user=start_user)
+    queue = []
 
-    #users = api.GetFriends(user=start_user)
-    #print([u.name for u in users])
+    try:
+        if not s in [u.name for u in users]:
+            raise Exception(s)
+    except Exception as inst:
+        print("Could not find user: ." % inst.args[0])
+        return
+
+    g.add_vertex(s, color="gray", dist=0)
+    queue.append([s, users[[u.name for u in users].index(s)].screen_name])
+
+    while queue:
+        first = queue.pop()
+
+        print("Person: %s" % first[0])
+        try:
+            #users = api.GetFriends(user=users[i].screen_name)
+            users = api.GetFriends(user=first[1])
+        except twitter.TwitterError, error:
+            if g.vertexes[first[0]][0]["color"] == "black":
+                print("Warning: you're removing a black vertex.")
+
+            g.del_vertex(first[0])
+            continue
+
+        for u in users:
+            if not u.name in g.vertexes:
+                g.add_edge(first[0], u.name, color="white", dist=-1)
+
+            if g.vertexes[u.name][0]["color"] == "white":
+                g.vertexes[u.name][0]["color"] = "gray"
+                dist = g.vertexes[first[0]][0]["dist"] + 1
+                g.vertexes[u.name][0]["dist"] = dist
+                queue.append([u.name, u.screen_name])
+
+                if u.name == e:
+                    print("We found him/her! :-)")
+                    return
+
+        g.vertexes[first[0]][0]["color"] = "black"
+
+def main():
+    if not os.environ["CONSUMER_KEY"] or \
+        not os.environ["CONSUMER_SECRET"] or \
+        not os.environ["ACCESS_TOKEN_KEY"] or \
+        not os.environ["ACCESS_TOKEN_SECRET"]:
+        print("There is any missing environment variable that was not set.")
+        sys.exit(-1)
+
+    api = twitter.Api(
+        consumer_key=os.environ["CONSUMER_KEY"],
+        consumer_secret=os.environ["CONSUMER_SECRET"],
+        access_token_key=os.environ["CONSUMER_SECRET"],
+        access_token_secret=os.environ["ACCESS_TOKEN_SECRET"])
 
     g = Graph()
-    g.add_vertex("test", color="white", dist=-1)
-    g.add_edge("test", "test2", "test3", color="white", dist=8)
-    g.add_edge("test4", "test5", color="white", dist=-1)
-    print(g)
+
+    bfs(api, g, "Ricardo Salveti", "Paulo Alcantara")
+    #print(g)
+
+    #g.add_vertex("test", color="white", dist=-1)
+    #g.add_edge("test", "test2", "test3", color="white", dist=8)
+    #g.add_edge("test4", "test5", color="white", dist=-1)
+    #g.del_vertex("test3")
+    #print(g)
 
 if __name__ == "__main__":
     main()
