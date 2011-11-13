@@ -18,11 +18,14 @@
 # 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
 #
 
+# -*- coding: ISO-8859-1 -*-
+
 __author__ = """Paulo Alcantara (pcacjr@gmail.com)"""
 
 import sys
 import os
 import twitter
+import codecs
 
 start_user = "pcacjr"
 
@@ -42,7 +45,10 @@ class Graph(object):
         for arg in args:
             if not arg in self.vertexes:
                 self.add_vertex(arg, **kwargs)
-                self.vertexes[arg][1]["edges"][v] = [kwargs, {"edges": {}}]
+                color = self.vertexes[v][0]
+                dist = self.vertexes[v][1]
+                self.vertexes[arg][1]["edges"][v] = \
+                            [color, dist, {"edges": {}}]
 
             self.vertexes[v][1]["edges"][arg] = [kwargs, {"edges": {}}]
 
@@ -57,6 +63,46 @@ class Graph(object):
 
         for k in keys:
             del self.vertexes[k[0]][1]["edges"][k[1]]
+
+    def __get_right_graphviz_syntax(self, color):
+        s = ""
+        if color == "black":
+            s += "[fontsize=8, fontcolor=\"white\", style=filled, fillcolor=\"black\"]"
+        else:
+            s += "[fontsize=8, style=filled, fillcolor=" + "\"" + color + \
+                "\"" + "]"
+
+        return s
+
+    def draw(self, out_file):
+        s = "strict graph G {\n\t"
+        for key, attrs in self.vertexes.iteritems():
+            s += "\"" + key + "\"" + " " + \
+                self.__get_right_graphviz_syntax(attrs[0]["color"]) + \
+                ";\n\t" + "\"" + key + "\"" + " -- {"
+
+            if not attrs[1]["edges"]:
+                continue
+
+            for _key, _attrs in attrs[1]["edges"].iteritems():
+                exists = "\"" + _key + "\"" + " --"
+                if s.find(exists) != -1:
+                    continue
+
+                s += "\"" + _key + "\"" + " " + \
+                    self.__get_right_graphviz_syntax(_attrs[0]["color"]) + " "
+
+            s += "};\n\t"
+
+        s += "}\n"
+
+        f = codecs.open('.foobar.dot', 'wa', 'ISO-8859-15', 'replace')
+        #f = open(".foobar.dot", "wa")
+        f.write(s)
+        f.close()
+
+        s = "dot -T png .foobar.dot -o " + out_file + " -Gcharset=latin1"
+        os.system(s)
 
     def __str__(self):
         s = ""
@@ -113,7 +159,7 @@ def bfs(api, g, s, e):
                 queue.append([u.name, u.screen_name])
 
                 if u.name == e:
-                    print("We found him/her! :-)")
+                    g.vertexes[u.name][0]["color"] = "yellow"
                     return
 
         g.vertexes[first[0]][0]["color"] = "black"
@@ -134,13 +180,17 @@ def main():
 
     g = Graph()
 
-    bfs(api, g, "Ricardo Salveti", "Paulo Alcantara")
+    #bfs(api, g, "Ricardo Salveti", "Lady Gaga")
+    bfs(api, g, "Ricardo Salveti", "Energy Sports Brasil")
+    g.draw("file.png")
+    #bfs(api, g, "Ricardo Salveti", "Paulo Alcantara")
     #print(g)
 
     #g.add_vertex("test", color="white", dist=-1)
-    #g.add_edge("test", "test2", "test3", color="white", dist=8)
+    #g.add_edge("test", "test2", "test3", "fuck", color="green", dist=8)
     #g.add_edge("test4", "test5", color="white", dist=-1)
     #g.del_vertex("test3")
+    g.draw("file.png")
     #print(g)
 
 if __name__ == "__main__":
