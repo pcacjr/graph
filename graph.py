@@ -26,8 +26,11 @@ import sys
 import os
 import twitter
 import codecs
+from PySide import QtCore, QtGui
 
-start_user = "pcacjr"
+image_path = "/home/pcacjr/src/other-graph/images/file.png"
+loading_image_path = "/home/pcacjr/src/other-graph/images/loading.gif"
+done_image_path = "/home/pcacjr/src/other-graph/images/done.gif"
 
 class Graph(object):
     def __init__(self):
@@ -118,80 +121,249 @@ class Graph(object):
 
         return s
 
-"""The beautiful thing goes here man! :-)
-"""
-def bfs(api, g, s, e):
-    users = api.GetFriends(user=start_user)
-    queue = []
+# Thread that will run our algorithm :-)
+class LookupProcess(QtCore.QThread):
+    def __init__(self, win, parent=None):
+        super(LookupProcess, self).__init__(parent)
+        self._win = win
 
-    try:
-        if not s in [u.name for u in users]:
-            raise Exception(s)
-    except Exception as inst:
-        print("Could not find user: ." % inst.args[0])
-        return
+    def bfs(self, api, g, s, e):
+        users = api.GetFriends(user=self._win.aedit.text())
+        queue = []
 
-    g.add_vertex(s, color="gray", dist=0)
-    queue.append([s, users[[u.name for u in users].index(s)].screen_name])
-
-    while queue:
-        first = queue.pop()
-
-        print("Person: %s" % first[0])
         try:
-            #users = api.GetFriends(user=users[i].screen_name)
-            users = api.GetFriends(user=first[1])
-        except twitter.TwitterError, error:
-            if g.vertexes[first[0]][0]["color"] == "black":
-                print("Warning: you're removing a black vertex.")
+            if not s in [u.name for u in users]:
+                raise Exception(s)
+        except Exception as inst:
+            self._win.label3.setText(
+                "<ERROR> Could not find user: ." % inst.args[0])
+            return
 
-            g.del_vertex(first[0])
-            continue
+        g.add_vertex(s, color="gray", dist=0)
+        queue.append([s, users[[u.name for u in users].index(s)].screen_name])
 
-        for u in users:
-            if not u.name in g.vertexes:
-                g.add_edge(first[0], u.name, color="white", dist=-1)
+        while queue:
+            first = queue.pop()
 
-            if g.vertexes[u.name][0]["color"] == "white":
-                g.vertexes[u.name][0]["color"] = "gray"
-                dist = g.vertexes[first[0]][0]["dist"] + 1
-                g.vertexes[u.name][0]["dist"] = dist
-                queue.append([u.name, u.screen_name])
+            self._win.label3.setText("<INFO> Looking into %s." % first[0])
+            try:
+                #users = api.GetFriends(user=users[i].screen_name)
+                users = api.GetFriends(user=first[1])
+            except twitter.TwitterError, error:
+                if g.vertexes[first[0]][0]["color"] == "black":
+                    self._win.label3.setText(
+                            "<WARNING> You're removing a black vertex.")
 
-                if u.name == e:
-                    g.vertexes[u.name][0]["color"] = "yellow"
-                    return
+                g.del_vertex(first[0])
+                continue
 
-        g.vertexes[first[0]][0]["color"] = "black"
+            for u in users:
+                if not u.name in g.vertexes:
+                    g.add_edge(first[0], u.name, color="white", dist=-1)
+
+                if g.vertexes[u.name][0]["color"] == "white":
+                    self._win.label3.setText(
+                        "<INFO> Vertex %s is white, so set its color to gray.")
+
+                    g.vertexes[u.name][0]["color"] = "gray"
+                    dist = g.vertexes[first[0]][0]["dist"] + 1
+                    g.vertexes[u.name][0]["dist"] = dist
+                    queue.append([u.name, u.screen_name])
+
+                    if u.name == e:
+                        self._win.label3.setText(
+                            "<INFO> %s has been found! :-)" % u.name)
+                        # set the found vertex's color to yellow
+                        g.vertexes[u.name][0]["color"] = "yellow"
+                        return
+
+            self._win.label3.setText(
+                "<INFO> Setting color to black for the Vertex %s." % first[0])
+            g.vertexes[first[0]][0]["color"] = "black"
+
+    def run(self):
+        if not os.environ["CONSUMER_KEY"] or \
+            not os.environ["CONSUMER_SECRET"] or \
+            not os.environ["ACCESS_TOKEN_KEY"] or \
+            not os.environ["ACCESS_TOKEN_SECRET"]:
+            self.label3.setText(
+                "<ERROR> There is any missing environment variable that was not set.")
+            sys.exit(-1)
+
+        api = twitter.Api(
+                consumer_key=os.environ["CONSUMER_KEY"],
+                consumer_secret=os.environ["CONSUMER_SECRET"],
+                access_token_key=os.environ["CONSUMER_SECRET"],
+                access_token_secret=os.environ["ACCESS_TOKEN_SECRET"])
+
+        g = Graph()
+        self.bfs(api, g, self._win.ledit0.text(), self._win.ledit1.text())
+        self._win.label2.setFont(QtGui.QFont("Arial", 10, QtGui.QFont.Bold))
+        self._win.label2.setText(
+            "Please wait. Generating image file from the generated Graph...")
+        g.draw(image_path)
+        self._win.label2.setText(
+            "Done! The generated image file from the Graph is showed below.")
+
+        self._win.emit(QtCore.SIGNAL("lookup_process_done"))
+
+class Window(QtGui.QWidget):
+    def __init__(self):
+        super(Window, self).__init__()
+
+        self.initial_layout = QtGui.QGridLayout()
+
+        self.create_initial_layout()
+        self.setLayout(self.initial_layout)
+
+        self.setWindowTitle("Project")
+
+    def create_initial_layout(self):
+        self.banner = QtGui.QLabel(
+                "Copyright (C) 2011 Paulo Alcantara <pcacjr@gmail.com>\n\n" +
+                "UNICAP's Graph Classwork")
+        self.banner.setFont(QtGui.QFont("Arial", 10, QtGui.QFont.Bold))
+        self.adv = QtGui.QLabel("Please, give a starting screen name here:")
+        self.adv.setFont(QtGui.QFont("Arial", 10, QtGui.QFont.Bold))
+        self.aedit = QtGui.QLineEdit()
+        self.label0 = QtGui.QLabel("From: ")
+        self.label0.setFont(QtGui.QFont("Arial", 10, QtGui.QFont.Bold))
+        self.ledit0 = QtGui.QLineEdit()
+        self.label1 = QtGui.QLabel("To: ")
+        self.label1.setFont(QtGui.QFont("Arial", 10, QtGui.QFont.Bold))
+        self.ledit1 = QtGui.QLineEdit()
+
+        self.go_bt = QtGui.QPushButton("&Go")
+        self.go_bt.clicked.connect(self.go_to_final_widget)
+        self.quit_bt = QtGui.QPushButton("&Quit")
+        self.quit_bt.clicked.connect(QtGui.qApp.quit)
+
+        self.initial_layout.addWidget(self.banner, 1, 0)
+        self.initial_layout.addWidget(self.adv, 2, 0)
+        self.initial_layout.addWidget(self.aedit, 2, 2)
+        self.initial_layout.addWidget(self.label0, 3, 0)
+        self.initial_layout.addWidget(self.ledit0, 3, 2)
+        self.initial_layout.addWidget(self.label1, 4, 0)
+        self.initial_layout.addWidget(self.ledit1, 4, 2)
+        self.initial_layout.addWidget(self.go_bt, 5, 0)
+        self.initial_layout.addWidget(self.quit_bt, 5, 2)
+
+    def create_loading_animation(self):
+        self.loading_label = QtGui.QLabel()
+        self.loading_label.setBackgroundRole(QtGui.QPalette.Base)
+        self.movie = QtGui.QMovie(loading_image_path)
+        self.loading_label.setMovie(self.movie)
+        self.movie.start();
+
+    def abort_lookup_process(self):
+        mbox = QtGui.QMessageBox()
+        mbox.setText("About to abort the lookup process.")
+        mbox.setInformativeText("Do you really want to abort the lookup ?")
+        mbox.setStandardButtons(QtGui.QMessageBox.Yes | QtGui.QMessageBox.No)
+        mbox.setDefaultButton(QtGui.QMessageBox.No)
+
+        ret = mbox.exec_()
+        if ret == QtGui.QMessageBox.Yes:
+            QtGui.qApp.quit()
+        elif ret == QtGui.QMessageBox.No:
+            pass
+
+    def adjustScrollBar(self, scrollBar, factor):
+        scrollBar.setValue(int(factor * scrollBar.value()
+                                + ((factor - 1) * scrollBar.pageStep()/2)))
+
+    def on_lookup_process_done(self):
+        self.movie.stop()
+        self.movie.setFileName(done_image_path)
+        self.movie.start();
+        image = QtGui.QImage(image_path)
+        self.image_label.setPixmap(QtGui.QPixmap.fromImage(image))
+        self.image_label.adjustSize()
+
+    def create_final_layout(self):
+        self.w = QtGui.QWidget()
+
+        self.final_layout = QtGui.QGridLayout()
+
+        self.label2 = QtGui.QLabel("Starting lookup in a few seconds...")
+        self.label2.setFont(QtGui.QFont("Arial", 10, QtGui.QFont.Bold))
+        quit_bt = QtGui.QPushButton("&Quit")
+        quit_bt.clicked.connect(self.abort_lookup_process)
+
+        self.final_layout.addWidget(self.banner, 1, 0)
+        self.final_layout.addWidget(quit_bt, 1, 2)
+        self.final_layout.addWidget(self.label2, 2, 0)
+
+        self.w.setLayout(self.final_layout)
+
+        self.w.setLayout(self.final_layout)
+
+        self.hide()
+        self.w.show()
+
+        self.image_label = QtGui.QLabel()
+        self.image_label.setBackgroundRole(QtGui.QPalette.Base)
+        self.image_label.setSizePolicy(QtGui.QSizePolicy.Ignored,
+                                    QtGui.QSizePolicy.Ignored)
+
+        self.scroll_area = QtGui.QScrollArea()
+        self.scroll_area.setBackgroundRole(QtGui.QPalette.Dark)
+        self.scroll_area.setWidget(self.image_label)
+
+        self.scroll_area.setWidgetResizable(True)
+        self.w.scaleFactor = 1.0
+
+        self.final_layout.addWidget(self.scroll_area, 4, 0)
+
+        t = QtCore.QTimer()
+        t.setInterval(3500)
+        t.start()
+
+        self.label2.setText("Please wait. Lookup in progress...")
+        self.label3 = QtGui.QLabel()
+        self.label3.setFont(QtGui.QFont("Arial", 16, QtGui.QFont.Bold))
+        self.final_layout.addWidget(self.label3, 3, 0)
+
+        self.create_loading_animation()
+        self.final_layout.addWidget(self.loading_label, 2, 2)
+
+        self.lookup = LookupProcess(self)
+        self.lookup.start()
+
+        self.connect(self.lookup, QtCore.SIGNAL("finished()"),
+                    self, QtCore.SLOT("on_lookup_process_done()"))
+
+    def go_to_final_widget(self):
+        mbox = QtGui.QMessageBox()
+        mbox.setText("Damnit! I told you that you _must_ fill in all fields!")
+        mbox.setInformativeText("Do you wish to continue ?")
+        mbox.setStandardButtons(QtGui.QMessageBox.Yes | QtGui.QMessageBox.No)
+        mbox.setDefaultButton(QtGui.QMessageBox.Yes)
+
+        ret = None
+        if not self.aedit.text():
+            ret = mbox.exec_()
+        elif not self.ledit0.text():
+            ret = mbox.exec_()
+        elif not self.ledit1.text():
+            ret = mbox.exec_()
+
+        if ret:
+            if ret == QtGui.QMessageBox.Yes:
+                pass
+            elif ret == QtGui.QMessageBox.No:
+                QtGui.qApp.quit()
+
+        self.create_final_layout()
+        self.setLayout(self.final_layout)
 
 def main():
-    if not os.environ["CONSUMER_KEY"] or \
-        not os.environ["CONSUMER_SECRET"] or \
-        not os.environ["ACCESS_TOKEN_KEY"] or \
-        not os.environ["ACCESS_TOKEN_SECRET"]:
-        print("There is any missing environment variable that was not set.")
-        sys.exit(-1)
+    app = QtGui.QApplication(sys.argv)
 
-    api = twitter.Api(
-        consumer_key=os.environ["CONSUMER_KEY"],
-        consumer_secret=os.environ["CONSUMER_SECRET"],
-        access_token_key=os.environ["CONSUMER_SECRET"],
-        access_token_secret=os.environ["ACCESS_TOKEN_SECRET"])
+    win = Window()
+    win.show()
 
-    g = Graph()
-
-    #bfs(api, g, "Ricardo Salveti", "Lady Gaga")
-    bfs(api, g, "Ricardo Salveti", "Energy Sports Brasil")
-    g.draw("file.png")
-    #bfs(api, g, "Ricardo Salveti", "Paulo Alcantara")
-    #print(g)
-
-    #g.add_vertex("test", color="white", dist=-1)
-    #g.add_edge("test", "test2", "test3", "fuck", color="green", dist=8)
-    #g.add_edge("test4", "test5", color="white", dist=-1)
-    #g.del_vertex("test3")
-    g.draw("file.png")
-    #print(g)
+    sys.exit(app.exec_())
 
 if __name__ == "__main__":
     main()
