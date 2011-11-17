@@ -100,7 +100,6 @@ class Graph(object):
         s += "}\n"
 
         f = codecs.open('.foobar.dot', 'wa', 'ISO-8859-15', 'replace')
-        #f = open(".foobar.dot", "wa")
         f.write(s)
         f.close()
 
@@ -127,6 +126,10 @@ class LookupProcess(QtCore.QThread):
         super(LookupProcess, self).__init__(parent)
         self._win = win
 
+    def __print_and_save(self, s):
+        self._win.label3.setText(s)
+        self._win.log_res += s + "\n"
+
     def bfs(self, api, g, s, e):
         users = api.GetFriends(user=self._win.aedit.text())
         queue = []
@@ -135,8 +138,8 @@ class LookupProcess(QtCore.QThread):
             if not s in [u.name for u in users]:
                 raise Exception(s)
         except Exception as inst:
-            self._win.label3.setText(
-                "<ERROR> Could not find user: ." % inst.args[0])
+            self.__print_and_save("<ERROR> Could not find user: ." % \
+                                inst.args[0])
             return
 
         g.add_vertex(s, color="gray", dist=0)
@@ -145,25 +148,27 @@ class LookupProcess(QtCore.QThread):
         while queue:
             first = queue.pop()
 
-            self._win.label3.setText("<INFO> Looking into %s." % first[0])
+            self.__print_and_save("<INFO> Looking into %s." % first[0])
             try:
-                #users = api.GetFriends(user=users[i].screen_name)
                 users = api.GetFriends(user=first[1])
             except twitter.TwitterError, error:
                 if g.vertexes[first[0]][0]["color"] == "black":
-                    self._win.label3.setText(
-                            "<WARNING> You're removing a black vertex.")
+                    self.__print_and_save("<WARNING> You're removing a " + \
+                                        "black vertex.")
 
                 g.del_vertex(first[0])
                 continue
 
             for u in users:
                 if not u.name in g.vertexes:
+                    self.__print_and_save(
+                        "<INFO> Adding %s (new vertex) to the Graph" % u.name)
                     g.add_edge(first[0], u.name, color="white", dist=-1)
 
                 if g.vertexes[u.name][0]["color"] == "white":
-                    self._win.label3.setText(
-                        "<INFO> Vertex %s is white, so set its color to gray.")
+                    self.__print_and_save(
+                        "<INFO> Vertex %s is white - set its color to gray." \
+                        % u.name)
 
                     g.vertexes[u.name][0]["color"] = "gray"
                     dist = g.vertexes[first[0]][0]["dist"] + 1
@@ -171,13 +176,13 @@ class LookupProcess(QtCore.QThread):
                     queue.append([u.name, u.screen_name])
 
                     if u.name == e:
-                        self._win.label3.setText(
-                            "<INFO> %s has been found! :-)" % u.name)
+                        self.__print_and_save(
+                                "<INFO> %s has been found! :-)" % u.name)
                         # set the found vertex's color to yellow
                         g.vertexes[u.name][0]["color"] = "yellow"
                         return
 
-            self._win.label3.setText(
+            self.__print_and_save(
                 "<INFO> Setting color to black for the Vertex %s." % first[0])
             g.vertexes[first[0]][0]["color"] = "black"
 
@@ -186,9 +191,9 @@ class LookupProcess(QtCore.QThread):
             not os.environ["CONSUMER_SECRET"] or \
             not os.environ["ACCESS_TOKEN_KEY"] or \
             not os.environ["ACCESS_TOKEN_SECRET"]:
-            self.label3.setText(
-                "<ERROR> There is any missing environment variable that was not set.")
-            sys.exit(-1)
+            self.__print_and_save("<ERROR> There is any missing " + \
+                                "environment variable that was not set.")
+            return
 
         api = twitter.Api(
                 consumer_key=os.environ["CONSUMER_KEY"],
@@ -199,11 +204,9 @@ class LookupProcess(QtCore.QThread):
         g = Graph()
         self.bfs(api, g, self._win.ledit0.text(), self._win.ledit1.text())
         self._win.label2.setFont(QtGui.QFont("Arial", 10, QtGui.QFont.Bold))
-        self._win.label2.setText(
-            "Please wait. Generating image file from the generated Graph...")
+        self._win.label2.setText("Please wait. Generating image file from " + \
+                            " the generated Graph...")
         g.draw(image_path)
-        self._win.label2.setText(
-            "Done! The generated image file from the Graph is showed below.")
 
         self._win.emit(QtCore.SIGNAL("lookup_process_done"))
 
@@ -268,31 +271,66 @@ class Window(QtGui.QWidget):
         elif ret == QtGui.QMessageBox.No:
             pass
 
-    def adjustScrollBar(self, scrollBar, factor):
-        scrollBar.setValue(int(factor * scrollBar.value()
-                                + ((factor - 1) * scrollBar.pageStep()/2)))
+    def open_image_with_feh(self):
+        os.system("feh " + image_path)
+
+    def write_it_to_log(self):
+        self.log.setText(self.log_res)
+
+    def save_log(self):
+        file_format = "txt"
+        initial_path = QtCore.QDir.currentPath() + "/log." + file_format
+        filename,_ = QtGui.QFileDialog.getSaveFileName(self, "Save Log",
+                    initial_path,
+                    "%s Files (*.%s);;All Files (*)" % \
+                    (str(file_format).upper(), file_format))
+
+        if filename:
+            f = codecs.open(filename, 'wa', 'ISO-8859-15', 'replace')
+            f.write(self.log.toPlainText())
+            f.close()
+            self.label2.setText("Cool! The log has been saved in " + filename)
 
     def on_lookup_process_done(self):
+        t = QtCore.QTimer(self)
+        t.timeout.connect(self.write_it_to_log)
+        t.start(1500)
+
+        self.label2.setText("Done! All the steps have been saved " + \
+                            "successfully and they're all showed below.")
+
         self.movie.stop()
         self.movie.setFileName(done_image_path)
         self.movie.start();
-        image = QtGui.QImage(image_path)
-        self.image_label.setPixmap(QtGui.QPixmap.fromImage(image))
-        self.image_label.adjustSize()
+
+        save_log_bt = QtGui.QPushButton("Save Log")
+        save_log_bt.clicked.connect(self.save_log)
+
+        open_image = QtGui.QPushButton("Open Image")
+        open_image.clicked.connect(self.open_image_with_feh)
+
+        self.final_layout.addWidget(save_log_bt, 5, 2)
+        self.final_layout.addWidget(open_image, 3, 2)
+
 
     def create_final_layout(self):
         self.w = QtGui.QWidget()
 
         self.final_layout = QtGui.QGridLayout()
 
-        self.label2 = QtGui.QLabel("Starting lookup in a few seconds...")
+        self.label2 = QtGui.QLabel("Starting lookup...")
         self.label2.setFont(QtGui.QFont("Arial", 10, QtGui.QFont.Bold))
         quit_bt = QtGui.QPushButton("&Quit")
         quit_bt.clicked.connect(self.abort_lookup_process)
 
+        self.log = QtGui.QTextEdit()
+        self.log.setReadOnly(True)
+        self.log_res = ""
+
         self.final_layout.addWidget(self.banner, 1, 0)
         self.final_layout.addWidget(quit_bt, 1, 2)
         self.final_layout.addWidget(self.label2, 2, 0)
+        self.final_layout.addWidget(self.log, 4, 0)
 
         self.w.setLayout(self.final_layout)
 
@@ -300,24 +338,6 @@ class Window(QtGui.QWidget):
 
         self.hide()
         self.w.show()
-
-        self.image_label = QtGui.QLabel()
-        self.image_label.setBackgroundRole(QtGui.QPalette.Base)
-        self.image_label.setSizePolicy(QtGui.QSizePolicy.Ignored,
-                                    QtGui.QSizePolicy.Ignored)
-
-        self.scroll_area = QtGui.QScrollArea()
-        self.scroll_area.setBackgroundRole(QtGui.QPalette.Dark)
-        self.scroll_area.setWidget(self.image_label)
-
-        self.scroll_area.setWidgetResizable(True)
-        self.w.scaleFactor = 1.0
-
-        self.final_layout.addWidget(self.scroll_area, 4, 0)
-
-        t = QtCore.QTimer()
-        t.setInterval(3500)
-        t.start()
 
         self.label2.setText("Please wait. Lookup in progress...")
         self.label3 = QtGui.QLabel()
