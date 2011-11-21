@@ -27,6 +27,7 @@ import os
 import twitter
 import codecs
 from PySide import QtCore, QtGui
+import re
 
 image_path = "/home/pcacjr/src/other-graph/images/file.png"
 loading_image_path = "/home/pcacjr/src/other-graph/images/loading.gif"
@@ -80,19 +81,29 @@ class Graph(object):
     def draw(self, out_file):
         s = "strict graph G {\n\t"
         for key, attrs in self.vertexes.iteritems():
-            s += "\"" + key + "\"" + " " + \
-                self.__get_right_graphviz_syntax(attrs[0]["color"]) + \
-                ";\n\t" + "\"" + key + "\"" + " -- {"
+            s += "\"" + key + " (D: " + str(attrs[0]["dist"]) + ")" +  "\"" + \
+                " " + self.__get_right_graphviz_syntax(attrs[0]["color"]) + \
+                ";\n\t" + "\"" + key + " (D: " + str(attrs[0]["dist"]) + \
+                ")" + "\"" + " -- {"
 
             if not attrs[1]["edges"]:
                 continue
 
             for _key, _attrs in attrs[1]["edges"].iteritems():
-                exists = "\"" + _key + "\"" + " --"
-                if s.find(exists) != -1:
+                # Remove newline characters, if any. Also fix missing
+                # backslashs/slashs on parameters and remove duplicated
+                # backslashs.
+                _key = _key.replace("\n", "").replace(")", "\)"). \
+                        replace("(", "\(").replace("]", "\]"). \
+                        replace("[", "\[").replace(".", "\."). \
+                        replace("?", "\?").replace("*", "\*"). \
+                        replace("{", "\{").replace("}", "\}")
+                pattern = _key + "\s+\(D:.*\)\s+--.*"
+                if re.match(pattern, s):
                     continue
 
-                s += "\"" + _key + "\"" + " " + \
+                s += "\"" + _key + " (D: " + str(_attrs[0]["dist"]) + ")" + \
+                    "\"" + " " + \
                     self.__get_right_graphviz_syntax(_attrs[0]["color"]) + " "
 
             s += "};\n\t"
