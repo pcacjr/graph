@@ -28,6 +28,7 @@ import twitter
 import codecs
 from PySide import QtCore, QtGui
 import re
+import urllib2
 
 image_path = "/home/pcacjr/src/other-graph/images/file.png"
 loading_image_path = "/home/pcacjr/src/other-graph/images/loading.gif"
@@ -93,7 +94,7 @@ class Graph(object):
         return s
 
     def draw(self, out_file):
-        s = "strict graph G {\n\t"
+        s = "strict graph G { rankdir=LR ratio=fill size=\"9.8, 11\"\n\t"
         for key, attrs in self.vertexes.iteritems():
             s += "\"" + key + " (D: " + str(attrs[0]["dist"]) + ")" +  "\"" + \
                 " " + self.__get_right_graphviz_syntax(attrs[0]["color"]) + \
@@ -184,12 +185,20 @@ class LookupProcess(QtCore.QThread):
             try:
                 users = api.GetFriends(user=first[1])
             except twitter.TwitterError, error:
+                pattern = "Rate limit exceeded"
+                if pattern in error:
+                    self.__print_and_save("<ERROR>: %s." % error)
+                    return
+
                 if g.vertexes[first[0]][0]["color"] == "black":
                     self.__print_and_save("<WARNING> You're removing a " + \
                                         "black vertex.")
 
                 g.del_vertex(first[0])
                 continue
+            except urllib2.URLError as inst:
+                self.__print_and_save("<ERROR> %s." % inst.args[0])
+                return
 
             for u in users:
                 if not u.name in g.vertexes:
