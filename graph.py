@@ -68,6 +68,20 @@ class Graph(object):
         for k in keys:
             del self.vertexes[k[0]][1]["edges"][k[1]]
 
+    def set_attrs(self, v, **kwargs):
+        if v not in self.vertexes:
+            return
+
+        for key, attrs in self.vertexes.iteritems():
+            if key == v:
+                for k in kwargs:
+                    attrs[0][k] = kwargs[k]
+
+            for _key, _attrs in attrs[1]["edges"].iteritems():
+                if _key == v:
+                    for k in kwargs:
+                        _attrs[0][k] = kwargs[k]
+
     def __get_right_graphviz_syntax(self, color):
         s = ""
         if color == "black":
@@ -91,15 +105,17 @@ class Graph(object):
 
             for _key, _attrs in attrs[1]["edges"].iteritems():
                 # Remove newline characters, if any. Also fix missing
-                # backslashs/slashs on parameters and remove duplicated
+                # backslashs/slashs on parameters and remove duplicate
                 # backslashs.
                 _key = _key.replace("\n", "").replace(")", "\)"). \
                         replace("(", "\(").replace("]", "\]"). \
                         replace("[", "\[").replace(".", "\."). \
                         replace("?", "\?").replace("*", "\*"). \
                         replace("{", "\{").replace("}", "\}")
-                pattern = _key + "\s+\(D:.*\)\s+--.*"
+
+                pattern = "^.*" + _key + ".*--.*{"
                 if re.match(pattern, s):
+                    # ignore duplicates
                     continue
 
                 s += "\"" + _key + " (D: " + str(_attrs[0]["dist"]) + ")" + \
@@ -142,14 +158,19 @@ class LookupProcess(QtCore.QThread):
         self._win.log_res += s + "\n"
 
     def bfs(self, api, g, s, e):
-        users = api.GetFriends(user=self._win.aedit.text())
+        try:
+            users = api.GetFriends(user=self._win.aedit.text())
+        except twitter.TwitterError, error:
+            self.__print_and_save("<ERROR>: %s" % error)
+            return
+
         queue = []
 
         try:
             if not s in [u.name for u in users]:
                 raise Exception(s)
         except Exception as inst:
-            self.__print_and_save("<ERROR> Could not find user: ." % \
+            self.__print_and_save("<ERROR> Could not find user: %s." % \
                                 inst.args[0])
             return
 
@@ -157,7 +178,7 @@ class LookupProcess(QtCore.QThread):
         queue.append([s, users[[u.name for u in users].index(s)].screen_name])
 
         while queue:
-            first = queue.pop()
+            first = queue.pop(0)    # remove and get first element of the queue
 
             self.__print_and_save("<INFO> Looking into %s." % first[0])
             try:
@@ -177,25 +198,24 @@ class LookupProcess(QtCore.QThread):
                     g.add_edge(first[0], u.name, color="white", dist=-1)
 
                 if g.vertexes[u.name][0]["color"] == "white":
+                    val = g.vertexes[first[0]][0]["dist"] + 1
+                    g.set_attrs(u.name, color="gray", dist=val)
                     self.__print_and_save(
-                        "<INFO> Vertex %s is white - set its color to gray." \
-                        % u.name)
+                        "<INFO> Vertex %s is white - set its color to gray and distance to %d." % (u.name, val))
 
-                    g.vertexes[u.name][0]["color"] = "gray"
-                    dist = g.vertexes[first[0]][0]["dist"] + 1
-                    g.vertexes[u.name][0]["dist"] = dist
                     queue.append([u.name, u.screen_name])
 
                     if u.name == e:
                         self.__print_and_save(
-                                "<INFO> %s has been found! :-)" % u.name)
+                            "<INFO> %s has been found! :-) (Distance: %d)" % \
+                            (u.name, g.vertexes[u.name][0]["dist"]))
                         # set the found vertex's color to yellow
-                        g.vertexes[u.name][0]["color"] = "yellow"
+                        g.set_attrs(u.name, color="yellow")
                         return
 
             self.__print_and_save(
                 "<INFO> Setting color to black for the Vertex %s." % first[0])
-            g.vertexes[first[0]][0]["color"] = "black"
+            g.set_attrs(first[0], color="black")
 
     def run(self):
         if not os.environ["CONSUMER_KEY"] or \
@@ -215,7 +235,7 @@ class LookupProcess(QtCore.QThread):
         g = Graph()
         self.bfs(api, g, self._win.ledit0.text(), self._win.ledit1.text())
         self._win.label2.setFont(QtGui.QFont("Arial", 10, QtGui.QFont.Bold))
-        self._win.label2.setText("Please wait. Generating image file from " + \
+        self._win.label2.setText("Please wait. Generating image file from" + \
                             " the generated Graph...")
         g.draw(image_path)
 
@@ -350,7 +370,8 @@ class Window(QtGui.QWidget):
         self.hide()
         self.w.show()
 
-        self.label2.setText("Please wait. Lookup in progress...")
+        self.label2.setText("Please wait. Lookup in progress... " + \
+                            "(Looking for %s)" % self.ledit1.text())
         self.label3 = QtGui.QLabel()
         self.label3.setFont(QtGui.QFont("Arial", 16, QtGui.QFont.Bold))
         self.final_layout.addWidget(self.label3, 3, 0)
