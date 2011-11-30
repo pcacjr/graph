@@ -321,6 +321,9 @@ class LookupProcess(QtCore.QThread):
                             (u.name, g.vertexes[u.name][0]["dist"]))
                         # set the found vertex's color to yellow
                         g.set_attrs(u.name, color="yellow")
+                        self._win.log_res += \
+                            "<INFO> Total of vertexes in the graph: " \
+                            "%d." % g.vertexes_no + "\n"
                         return
 
             """ If we reached here it means the vertex's adjacents
